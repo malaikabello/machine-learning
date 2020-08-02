@@ -1,0 +1,124 @@
+---
+title: "Week 4 Assignment: Predicting Exercise Classe from Wearable Devices"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, cache = TRUE)
+```
+
+## Analysis
+
+### Environment setup
+```{r}
+library(caret)
+library(randomForest)
+if (!file.exists('train.csv')) {
+  download.file(url = 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv', 
+                destfile = 'train.csv', method = 'curl', quiet = TRUE) 
+}
+if (!file.exists('test.csv')) {
+  download.file(url = 'https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv', 
+                destfile = 'test.csv', method = 'curl', quiet = TRUE)
+}
+trainRaw <- read.csv('train.csv')
+testRaw <- read.csv('test.csv')
+```
+
+### Preprocessing
+
+1. First look at the data for each column and remove variables unrelated to exercise (column number and time stamps) :
+
+```{r}
+str(trainRaw)
+train <- trainRaw[, 6:ncol(trainRaw)]
+```
+
+2. Split the data into 70% training and 30% testing set :
+
+```{r}
+set.seed(12345)
+inTrain <- createDataPartition(y = train$classe, p = 0.7, list = F)
+training <- train[inTrain, ]
+testing <- train[-inTrain, ]
+```
+
+3. Remove the variables with a lot of similarities :
+
+```{r}
+nzv <- nearZeroVar(train, saveMetrics = T)
+keepFeat <- row.names(nzv[nzv$nzv == FALSE, ])
+training <- training[, keepFeat]
+```
+
+4. Remove the variables with all NAs :
+```{r}
+training <- training[, colSums(is.na(training)) == 0]
+dim(training)
+```
+This is a rather stringent cutoff but there is still >50 features after removal !
+
+### Model training
+
+1. Set up 5-fold cross validation for training :
+
+```{r}
+modCtl <- trainControl(method = 'cv', number = 5)
+```
+
+2. Fit a model with random forests :
+
+```{r}
+set.seed(12345)
+modRf <- train(classe ~. , data = training, method = 'rf', trControl = modCtl)
+```
+- Read the summary of the model built with random forests :
+
+```{r}
+modRf$finalModel
+```
+- Predict with the validation set and check the confusion matrix and accuracy :
+
+```{r}
+predRf <- predict(modRf, newdata = testing)
+tst = factor(testing$classe)
+confusionMatrix(predRf, tst)$overall[1]
+confusionMatrix(predRf, tst)$table
+```
+### The accuracy is **~99.6%** under **5-fold** cross validation
+
+3. Fit a model with gradient boosting method :
+
+```{r}
+modGbm <- train(classe ~., data = training, method = 'gbm', trControl = modCtl, verbose = F)
+```
+- Read the summary of the model built with gbm :
+
+```{r}
+modGbm$finalModel
+```
+- Predict with the validation set and check the confusion matrix and accuracy :
+
+```{r}
+predGbm <- predict(modGbm, newdata = testing)
+tst = factor(testing$classe)
+confusionMatrix(predRf, tst)$overall[1]
+confusionMatrix(predRf, tst)$table
+```
+### The accuracy is **~98.8%** under **5-fold** cross validation
+
+## Quiz
+
+Since random forests gives the highest accuracy under the validation set, this model will be selected and used for prediction in the test set :
+
+```{r}
+predRfTest <- predict(modRf, newdata = testRaw)
+predRfTest
+```
+The gbm model can also be used for prediction and the results can be compared to above :
+
+```{r}
+predGbmTest <- predict(modGbm, newdata = testRaw)
+table(predRfTest, predGbmTest)
+```
+The two models produce the same results, as shown in the confusion matrix !
